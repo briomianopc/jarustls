@@ -926,6 +926,10 @@ extension_struct! {
         /// Encrypted client hello outer extensions (draft-ietf-tls-esni)
         ExtensionType::EncryptedClientHelloOuterExtensions =>
             pub(crate) encrypted_client_hello_outer: Option<Vec<ExtensionType>>,
+
+        /// Padding extension (RFC7685)
+        ExtensionType::Padding =>
+            pub(crate) padding: Option<PayloadU16>,
     } + {
         /// Order randomization seed.
         pub(crate) order_seed: u16,
@@ -960,6 +964,7 @@ impl ClientExtensions<'_> {
             renegotiation_info,
             encrypted_client_hello,
             encrypted_client_hello_outer,
+            padding,
             order_seed,
             contiguous_extensions,
         } = self;
@@ -986,6 +991,7 @@ impl ClientExtensions<'_> {
             renegotiation_info,
             encrypted_client_hello,
             encrypted_client_hello_outer,
+            padding,
             order_seed,
             contiguous_extensions,
         }

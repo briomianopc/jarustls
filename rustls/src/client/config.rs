@@ -170,6 +170,17 @@ pub struct ClientConfig {
 
     /// How to offer Encrypted Client Hello (ECH). The default is to not offer ECH.
     pub(super) ech_mode: Option<EchMode>,
+
+    /// Whether to randomize TLS fingerprint to evade detection.
+    ///
+    /// When enabled:
+    /// - Cipher suites order is randomized with weighted distribution
+    /// - Padding extension is added with random length (80-300 bytes, 70% probability)
+    /// - Extensions order remains randomized (already built-in via order_seed)
+    ///
+    /// This helps avoid fingerprinting by WAF/DPI systems while maintaining
+    /// protocol compliance. The default is false.
+    pub randomize_fingerprint: bool,
 }
 
 impl ClientConfig {
@@ -761,6 +772,7 @@ impl ConfigBuilder<ClientConfig, WantsClientCert> {
             cert_compressors: compress::default_cert_compressors().to_vec(),
             cert_compression_cache: Arc::new(compress::CompressionCache::default()),
             ech_mode: self.state.client_ech_mode,
+            randomize_fingerprint: false,
         })
     }
 }

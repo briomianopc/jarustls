@@ -659,6 +659,20 @@ fn emit_client_hello_for_retry(
     // but they also need to keep the same order as the previous ClientHello
     exts.order_seed = input.hello.extension_order_seed;
 
+    // Add random padding extension if fingerprint randomization is enabled
+    if config.randomize_fingerprint {
+        // Generate random bytes for probability (70%) and length (80-300)
+        let mut random_bytes = [0u8; 2];
+        config.provider().secure_random.fill(&mut random_bytes)?;
+        
+        let probability = random_bytes[0] % 100;
+        if probability < 70 {
+            // 70% chance to add padding
+            let padding_len = 80 + (random_bytes[1] as usize % 221); // 80-300 range
+            exts.padding = Some(crate::msgs::base::PayloadU16::new(vec![0u8; padding_len]));
+        }
+    }
+
     let mut cipher_suites: Vec<_> = config
         .provider()
         .iter_cipher_suites()
@@ -671,6 +685,11 @@ fn emit_client_hello_for_retry(
     if supported_versions.tls12 {
         // We don't do renegotiation at all, in fact.
         cipher_suites.push(CipherSuite::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+    }
+
+    // Apply fingerprint randomization if enabled
+    if config.randomize_fingerprint {
+        weighted_shuffle_cipher_suites(&mut cipher_suites, config.provider().secure_random)?;
     }
 
     let mut chp_payload = ClientHelloPayload {
@@ -1019,4 +1038,42 @@ pub(crate) trait ClientHandler<T>: fmt::Debug + Sealed + Send + Sync {
         st: ExpectServerHello,
         cx: &mut ClientContext<'_>,
     ) -> NextStateOrError;
+}
+
+/// Weighted shuffle for cipher suites to avoid fingerprinting.
+///
+/// Distribution:
+/// - 45%: AES_128 or CHACHA20 first (swap first two)
+/// - 45%: Keep original order (typically AES_128 first)
+/// - 10%: AES_256 first (rare, mimics some Java/Python clients)
+fn weighted_shuffle_cipher_suites(
+    cipher_suites: &mut Vec<CipherSuite>,
+    secure_random: &dyn crate::crypto::SecureRandom,
+) -> Result<(), Error> {
+    if cipher_suites.len() < 2 {
+        return Ok(());
+    }
+
+    // Generate random value 0-99
+    let mut random_byte = [0u8; 1];
+    secure_random.fill(&mut random_byte)?;
+    let choice = random_byte[0] % 100;
+
+    match choice {
+        0..=44 => {
+            // 45%: Swap first two (AES_128 <-> CHACHA20)
+            cipher_suites.swap(0, 1);
+        }
+        45..=89 => {
+            // 45%: Keep original order
+        }
+        _ => {
+            // 10%: Move AES_256 to first if it exists
+            if cipher_suites.len() >= 3 {
+                cipher_suites.swap(0, 2);
+            }
+        }
+    }
+
+    Ok(())
 }
